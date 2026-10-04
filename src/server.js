@@ -22,7 +22,7 @@ import {
 const SESSION_SECONDS = 60 * 60 * 24 * 7;
 const publicDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "../public");
 
-export function createApp({ config = loadConfig(), runResearchImpl = null, fetchImpl = fetch } = {}) {
+export function createApp({ config = loadConfig(), runResearchImpl = null, fetchImpl = fetch, linkedin = {} } = {}) {
   const app = express();
   const jobs = new Map();
   const rateLimits = new Map();
@@ -73,7 +73,21 @@ export function createApp({ config = loadConfig(), runResearchImpl = null, fetch
     });
   });
 
+  const exchangeLinkedInCode = linkedin.exchangeCode || ((args) => exchangeCode({ ...args, fetchImpl }));
+  const verifyLinkedInToken = linkedin.verifyIdToken || verifyIdToken;
+  const fetchLinkedInUser = linkedin.fetchUserInfo || ((args) => fetchUserInfo({ ...args, fetchImpl }));
+
   app.get("/auth/linkedin", async (req, res) => {
+    if (isLinkedInReturn(req)) return finishLinkedInLogin(req, res);
+    return startLinkedInLogin(req, res);
+  });
+  app.get("/auth/linkedin/callback", (req, res) => finishLinkedInLogin(req, res));
+  const registeredReturn = callbackPathname(config.linkedin.callbackUrl);
+  if (registeredReturn && registeredReturn !== "/auth/linkedin" && registeredReturn !== "/auth/linkedin/callback") {
+    app.get(registeredReturn, (req, res) => finishLinkedInLogin(req, res));
+  }
+
+  async function startLinkedInLogin(req, res) {
     if (!linkedinConfigured(config)) {
       res.status(503).type("html").send(messagePage(
         "LinkedIn sign-in is not configured",
@@ -94,16 +108,16 @@ export function createApp({ config = loadConfig(), runResearchImpl = null, fetch
       state,
       nonce,
     }));
-  });
+  }
 
-  app.get("/auth/linkedin/callback", async (req, res) => {
+  async function finishLinkedInLogin(req, res) {
     const secure = requestIsSecure(req);
     const fail = (code) => {
       res.setHeader("Set-Cookie", cookieHeader(OAUTH_COOKIE, "", { maxAge: 0, secure }));
       res.redirect(`/?error=${code}`);
     };
     if (!linkedinConfigured(config)) return fail("linkedin_config");
-    if (req.query.error) return fail("linkedin_denied");
+    if (typeof req.query.error === "string" && req.query.error) return fail("linkedin_denied");
     const code = typeof req.query.code === "string" ? req.query.code : "";
     const state = typeof req.query.state === "string" ? req.query.state : "";
     if (!code || !state) return fail("linkedin_state");
@@ -117,22 +131,21 @@ export function createApp({ config = loadConfig(), runResearchImpl = null, fetch
     if (!oauth?.state || !sameToken(oauth.state, state) || !oauth.nonce) return fail("linkedin_state");
 
     try {
-      const tokens = await exchangeCode({
+      const tokens = await exchangeLinkedInCode({
         code,
         clientId: config.linkedin.clientId,
         clientSecret: config.linkedin.clientSecret,
         callbackUrl: config.linkedin.callbackUrl,
-        fetchImpl,
       });
       if (!tokens.id_token) return fail("linkedin_token");
-      const identity = await verifyIdToken({
+      const identity = await verifyLinkedInToken({
         idToken: tokens.id_token,
         clientId: config.linkedin.clientId,
         nonce: oauth.nonce,
       });
       if (tokens.access_token) {
         try {
-          const userInfo = await fetchUserInfo({ accessToken: tokens.access_token, fetchImpl });
+          const userInfo = await fetchLinkedInUser({ accessToken: tokens.access_token });
           if (userInfo.sub !== identity.sub) return fail("linkedin_token");
           if (userInfo.name && identity.name === "LinkedIn member") identity.name = userInfo.name;
         } catch (error) {
@@ -151,7 +164,7 @@ export function createApp({ config = loadConfig(), runResearchImpl = null, fetch
       console.error("LinkedIn sign-in failed:", error.message);
       fail("linkedin_token");
     }
-  });
+  }
 
   app.post("/auth/logout", async (req, res) => {
     const session = await requireSession(req, res);
@@ -278,6 +291,22 @@ export function createApp({ config = loadConfig(), runResearchImpl = null, fetch
       const oldest = jobs.keys().next().value;
       jobs.delete(oldest);
     }
+  }
+}
+
+function isLinkedInReturn(req) {
+  return ["code", "state", "error"].some((key) => typeof req.query?.[key] === "string" && req.query[key]);
+}
+
+export function callbackPathname(callbackUrl) {
+  try {
+    const url = new URL(callbackUrl);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return "";
+    const pathname = url.pathname.replace(/\/+$/, "") || "/";
+    if (!pathname.startsWith("/") || pathname.includes("..") || pathname === "/") return "";
+    return pathname;
+  } catch {
+    return "";
   }
 }
 

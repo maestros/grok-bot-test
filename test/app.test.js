@@ -26,6 +26,74 @@ function baseConfig(overrides = {}) {
   };
 }
 
+test("LinkedIn return on the redirect_uri path exchanges the code", async (t) => {
+  const callbacks = [
+    "https://colleagues.onrender.com/auth/linkedin",
+    "http://localhost:3000/auth/linkedin/callback",
+  ];
+  for (const callbackUrl of callbacks) {
+    const exchanged = [];
+    const app = createApp({
+      config: baseConfig({
+        linkedin: {
+          clientId: "client-id",
+          clientSecret: "client-secret",
+          callbackUrl,
+        },
+      }),
+      linkedin: {
+        async exchangeCode(args) {
+          exchanged.push(args);
+          return { id_token: "id-token", access_token: "access-token" };
+        },
+        async verifyIdToken({ nonce }) {
+          assert.equal(typeof nonce, "string");
+          assert.ok(nonce.length > 10);
+          return { sub: "person-1", name: "Pat Example" };
+        },
+        async fetchUserInfo() {
+          return { sub: "person-1", name: "Pat Example" };
+        },
+      },
+    });
+    const server = app.listen(0);
+    t.after(() => new Promise((resolve) => server.close(resolve)));
+    const port = server.address().port;
+
+    const start = await send(port, "GET", "/auth/linkedin");
+    assert.equal(start.status, 302);
+    const authorization = new URL(start.headers.location);
+    assert.equal(authorization.searchParams.get("redirect_uri"), callbackUrl);
+    const returnPath = new URL(callbackUrl).pathname;
+    const state = authorization.searchParams.get("state");
+    const oauthCookie = cookiePair(start.headers["set-cookie"], "colleagues_oauth");
+
+    const restarted = await send(port, "GET", `${returnPath}?code=auth-code&state=${encodeURIComponent(state)}`);
+    assert.equal(restarted.status, 302);
+    assert.equal(restarted.headers.location, "/?error=linkedin_state");
+    assert.equal(exchanged.length, 0);
+
+    const returned = await send(
+      port,
+      "GET",
+      `${returnPath}?code=auth-code&state=${encodeURIComponent(state)}`,
+      { headers: { cookie: oauthCookie } },
+    );
+    assert.equal(returned.status, 302);
+    assert.equal(returned.headers.location, "/");
+    assert.equal(String(returned.headers.location).includes("linkedin.com"), false);
+    assert.equal(exchanged.length, 1);
+    assert.equal(exchanged[0].code, "auth-code");
+    assert.equal(exchanged[0].callbackUrl, callbackUrl);
+
+    const sessionCookie = cookiePair(returned.headers["set-cookie"], "colleagues_session");
+    const session = await send(port, "GET", "/api/session", { headers: { cookie: sessionCookie } });
+    const body = JSON.parse(session.body);
+    assert.equal(body.authenticated, true);
+    assert.equal(body.user.name, "Pat Example");
+  }
+});
+
 test("health, sign-in, and a signed-in lookup", async (t) => {
   const app = createApp({
     config: baseConfig({
@@ -125,6 +193,13 @@ test("health, sign-in, and a signed-in lookup", async (t) => {
   assert.equal(job.result.subject.name, "Ada Lovelace");
   assert.equal(job.result.subject.roles[0].sourceUrl, "https://example.com/bio");
 });
+
+function cookiePair(setCookie, name) {
+  const cookies = [].concat(setCookie || []);
+  const match = cookies.find((cookie) => cookie.startsWith(`${name}=`));
+  assert.ok(match, `missing ${name} cookie`);
+  return match.split(";")[0];
+}
 
 function send(port, method, path, { headers = {}, body } = {}) {
   const payload = body ? JSON.stringify(body) : null;

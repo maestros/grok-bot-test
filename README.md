@@ -46,10 +46,10 @@ Never commit `.env`. `.env.example` lists the same names with empty secrets.
 1. Open https://www.linkedin.com/developers/apps and create an app. LinkedIn requires the app to be associated with a Company Page.
 2. On the **Products** tab, add **Sign In with LinkedIn using OpenID Connect**. No other LinkedIn product is used.
 3. On the **Auth** tab, copy the **Client ID** and **Primary Client Secret**.
-4. Under **Authorized redirect URLs for your app**, add the callback exactly:
-   - Local: `http://localhost:3000/auth/linkedin/callback`
-   - Render: `https://colleagues.onrender.com/auth/linkedin/callback` (use the real `onrender.com` hostname)
-5. Set `LINKEDIN_CALLBACK_URL` to that same string. LinkedIn rejects a redirect that differs by scheme, host, path, or trailing slash.
+4. Under **Authorized redirect URLs for your app**, add the exact URL you will put in `LINKEDIN_CALLBACK_URL`. Sign-in finishes on that URL: the app exchanges the code, checks state and nonce, and sets the session there. Either of these paths works, as long as the LinkedIn app and `LINKEDIN_CALLBACK_URL` are the same string:
+   - `https://colleagues.onrender.com/auth/linkedin`
+   - `http://localhost:3000/auth/linkedin/callback`
+5. Set `LINKEDIN_CALLBACK_URL` to that same string. LinkedIn rejects a redirect that differs by scheme, host, path, or trailing slash. The live service is registered at `https://colleagues.onrender.com/auth/linkedin`.
 6. The app requests the scopes `openid`, `profile`, and `email`. After the ID token is verified against LinkedIn's published JWKS (`https://www.linkedin.com/oauth/openid/jwks`, issuer `https://www.linkedin.com/oauth`), the access token is discarded. The session cookie stores only the member id, display name, and a CSRF token. It is httpOnly, SameSite=Lax, and Secure on HTTPS. It lasts 7 days.
 
 ## What a lookup does
@@ -90,7 +90,7 @@ Render can host this UI and API as one free web service. Fly.io no longer has a 
    | `SESSION_SECRET` | Generate a value, or let the blueprint's `generateValue` create one |
    | `LINKEDIN_CLIENT_ID` | From the LinkedIn app |
    | `LINKEDIN_CLIENT_SECRET` | From the LinkedIn app |
-   | `LINKEDIN_CALLBACK_URL` | `https://<service-name>.onrender.com/auth/linkedin/callback` |
+   | `LINKEDIN_CALLBACK_URL` | The redirect URL registered on the LinkedIn app, such as `https://colleagues.onrender.com/auth/linkedin` |
    | `XAI_API_KEY` | From https://console.x.ai/ |
    | `XAI_MODEL` | `grok-4.7` |
    | `BRAVE_SEARCH_API_KEY` | Leave empty unless you have a Brave key |
