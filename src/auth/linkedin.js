@@ -54,13 +54,13 @@ export async function exchangeCode({ code, clientId, clientSecret, callbackUrl, 
   return payload;
 }
 
-export async function verifyIdToken({ idToken, clientId, nonce }) {
-  const { payload } = await jwtVerify(idToken, getJwks(), {
+export async function verifyIdToken({ idToken, clientId, nonce, jwks = getJwks() }) {
+  const { payload } = await jwtVerify(idToken, jwks, {
     issuer: ISSUER,
     audience: clientId,
     clockTolerance: 10,
   });
-  if (!payload.nonce || payload.nonce !== nonce) {
+  if (Object.hasOwn(payload, "nonce") && payload.nonce !== nonce) {
     throw new Error("LinkedIn login nonce did not match");
   }
   if (!payload.sub) throw new Error("LinkedIn ID token has no subject");
