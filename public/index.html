@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Colleagues</title>
+    <meta name="description" content="Sign in with LinkedIn, then look up colleagues from public pages.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <header class="top">
+      <a class="mark" href="/">Colleagues</a>
+      <p class="rule">Public pages only. LinkedIn is used for sign-in.</p>
+      <div id="account"></div>
+    </header>
+    <main id="main">
+      <h1>Who shared the team?</h1>
+      <p class="lede">Sign in with LinkedIn, then enter a name or a public profile URL. The lookup reads public pages and keeps a colleague only when a fetched source supports the fact.</p>
+      <p><a class="button" href="/auth/linkedin">Sign in with LinkedIn</a></p>
+      <noscript><p>JavaScript runs the lookup after you sign in.</p></noscript>
+    </main>
+    <footer>
+      <p>Every person, title, date, and company is kept only when the fetched page contains it. If a shared time range is not published, the result says so.</p>
+    </footer>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
